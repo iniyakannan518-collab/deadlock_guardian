@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deadlock Guardian — Visual Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy-950:#0A1220;
+    --navy-900:#0F1B2E;
+    --navy-800:#16243B;
+    --navy-700:#1D3155;
+    --navy-600:#28416E;
+    --line:#2A3C5C;
+    --canvas-bg:#F5F7FB;
+    --canvas-grid:#D9E0EC;
+    --ink:#0F1B2E;
+    --paper:#FFFFFF;
+    --muted:#7C8AA8;
+    --blue:#2E5CE6;
+    --blue-dark:#1E3A8A;
+    --amber:#E8930C;
+    --amber-dark:#8A5A06;
+    --red:#DC2626;
+    --red-dark:#7F1D1D;
+    --green:#0E9F6E;
+    --green-dark:#065F46;
+    --sans: 'IBM Plex Sans', -apple-system, Segoe UI, sans-serif;
+    --mono: 'IBM Plex Mono', SFMono-Regular, Menlo, monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    font-family:var(--sans);
+    background:var(--navy-950);
+    color:#E7ECF7;
+    overflow:hidden;
+  }
+  .app{
+    display:grid;
+    grid-template-rows:56px 1fr 190px;
+    grid-template-columns:220px 1fr 300px;
+    grid-template-areas:
+      "header header header"
+      "tools  canvas  side"
+      "tools  log     side";
+    height:100vh;
+  }
+  /* HEADER */
+  .header{
+    grid-area:header;
+    background:linear-gradient(180deg,var(--navy-900),var(--navy-950));
+    border-bottom:1px solid var(--line);
+    display:flex;align-items:center;justify-content:space-between;
+    padding:0 18px;
+  }
+  .brand{display:flex;align-items:baseline;gap:10px;}
+  .brand .mark{
+    width:26px;height:26px;border-radius:6px;
+    background:conic-gradient(from 220deg, var(--blue), var(--amber), var(--red), var(--blue));
+    display:inline-block;
+  }
+  .brand h1{font-size:15px;letter-spacing:.2px;margin:0;font-weight:600;}
+  .brand .sub{font-family:var(--mono);font-size:11px;color:var(--muted);}
+  .actions{display:flex;gap:8px;}
+  .btn{
+    font-family:var(--sans);
+    font-size:12.5px;font-weight:600;
+    border:1px solid var(--line);
+    background:var(--navy-800);
+    color:#E7ECF7;
+    padding:8px 13px;border-radius:7px;
+    cursor:pointer;
+    display:flex;align-items:center;gap:6px;
+    transition:transform .08s ease, border-color .12s ease, background .12s ease;
+  }
+  .btn:hover{border-color:var(--blue);background:var(--navy-700);}
+  .btn:active{transform:translateY(1px);}
+  .btn.primary{background:var(--blue);border-color:var(--blue);}
+  .btn.primary:hover{background:#2650cc;}
+  .btn.warn{background:var(--red);border-color:var(--red);}
+  .btn.warn:hover{background:#b91c1c;}
+  .btn.good{background:var(--green);border-color:var(--green);}
+  .btn.good:hover{background:#0b7f58;}
+  .btn:disabled{opacity:.35;cursor:not-allowed;}
+  .btn .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.7;}
+
+  /* TOOLS SIDEBAR */
+  .tools{
+    grid-area:tools;
+    background:var(--navy-900);
+    border-right:1px solid var(--line);
+    padding:14px 10px;
+    overflow-y:auto;
+  }
+  .tools h3{
+    font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;
+    color:var(--muted);margin:14px 6px 8px;font-weight:600;
+  }
+  .tools h3:first-child{margin-top:2px;}
+  .tool{
+    width:100%;text-align:left;
+    display:flex;align-items:center;gap:9px;
+    padding:9px 10px;margin-bottom:5px;
+    background:transparent;border:1px solid transparent;border-radius:8px;
+    color:#CBD5EA;font-family:var(--sans);font-size:13px;font-weight:500;
+    cursor:pointer;
+  }
+  .tool:hover{background:var(--navy-800);}
+  .tool.active{background:var(--navy-700);border-color:var(--blue);color:#fff;}
+  .tool .ic{
+    width:20px;height:20px;flex:none;display:flex;align-items:center;justify-content:center;
+  }
+  .tool .ic svg{width:18px;height:18px;}
+  .hint{
+    font-size:11px;color:var(--muted);line-height:1.5;padding:0 8px;margin-top:6px;font-family:var(--mono);
+  }
+
+  /* CANVAS */
+  .canvas-wrap{
+    grid-area:canvas;
+    position:relative;
+    background:var(--canvas-bg);
+    overflow:hidden;
+  }
+  svg#stage{width:100%;height:100%;display:block;cursor:default;}
+  .mode-banner{
+    position:absolute;top:10px;left:50%;transform:translateX(-50%);
+    background:var(--navy-900);color:#fff;
+    font-family:var(--mono);font-size:11.5px;
+    padding:6px 14px;border-radius:20px;border:1px solid var(--line);
+    display:none;align-items:center;gap:8px;pointer-events:none;
+    box-shadow:0 6px 20px rgba(0,0,0,.25);
+  }
+  .mode-banner.show{display:flex;}
+  .mode-banner .pulse{width:6px;height:6px;border-radius:50%;background:var(--amber);animation:pulse 1.1s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.25;}}
+
+  /* LOG PANEL */
+  .log-panel{
+    grid-area:log;
+    background:var(--navy-950);
+    border-top:1px solid var(--line);
+    border-right:1px solid var(--line);
+    padding:8px 12px;
+    overflow-y:auto;
+    font-family:var(--mono);font-size:12px;line-height:1.65;
+  }
+  .log-panel .row{display:flex;gap:8px;margin-bottom:2px;}
+  .log-panel .t{color:#4A5A80;flex:none;}
+  .log-panel .msg.info{color:#9DB2E0;}
+  .log-panel .msg.good{color:#4ADE9C;}
+  .log-panel .msg.bad{color:#F87171;}
+  .log-panel .msg.warn{color:#FBBF7A;}
+
+  /* SIDE PANEL */
+  .side{
+    grid-area:side;
+    background:var(--paper);
+    color:var(--ink);
+    border-left:1px solid var(--line);
+    overflow-y:auto;
+    padding:14px 14px 30px;
+  }
+  .side h2{
+    font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+    color:#6B7793;margin:18px 0 8px;font-weight:700;
+  }
+  .side h2:first-child{margin-top:0;}
+  table.matrix{
+    border-collapse:collapse;width:100%;font-family:var(--mono);font-size:11.5px;
+  }
+  table.matrix th, table.matrix td{
+    border:1px solid #E2E7F2;padding:4px 6px;text-align:center;
+  }
+  table.matrix th{background:#F0F3FA;color:#3A4B6E;font-weight:600;}
+  table.matrix td.rowhead{background:#F7F9FD;font-weight:600;color:var(--blue-dark);}
+  .empty-note{font-size:12px;color:#93A0BE;font-family:var(--mono);}
+  .prop-card{
+    border:1px solid #E2E7F2;border-radius:10px;padding:12px;margin-bottom:10px;background:#FAFBFE;
+  }
+  .prop-card .name{font-weight:700;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+  .swatch{width:10px;height:10px;border-radius:3px;flex:none;}
+  .field-row{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;margin:4px 0;font-family:var(--mono);color:#44506E;}
+  .field-row b{color:var(--ink);}
+  .cost-bar-bg{width:100%;height:6px;background:#E9EDF6;border-radius:4px;overflow:hidden;margin-top:3px;}
+  .cost-bar-fill{height:100%;border-radius:4px;}
+
+  /* MODAL */
+  .overlay{
+    position:fixed;inset:0;background:rgba(10,18,32,.55);
+    display:none;align-items:center;justify-content:center;z-index:50;
+    backdrop-filter:blur(2px);
+  }
+  .overlay.show{display:flex;}
+  .modal{
+    background:#fff;color:var(--ink);border-radius:14px;width:380px;max-width:92vw;
+    padding:20px;box-shadow:0 30px 60px rgba(0,0,0,.35);
+    font-family:var(--sans);
+    max-height:82vh;overflow-y:auto;
+  }
+  .modal h3{margin:0 0 4px;font-size:16px;}
+  .modal .modal-sub{font-size:12px;color:#8592AD;margin-bottom:14px;font-family:var(--mono);}
+  .modal label{display:block;font-size:11.5px;font-weight:600;color:#3A4B6E;margin:10px 0 4px;}
+  .modal input[type=text], .modal input[type=number]{
+    width:100%;padding:8px 10px;border:1px solid #D6DCEA;border-radius:7px;font-family:var(--mono);font-size:13px;
+  }
+  .modal input[type=checkbox]{margin-right:6px;}
+  .modal .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .modal .maxclaim-grid{display:grid;grid-template-columns:1fr 70px;gap:6px;align-items:center;margin-top:4px;}
+  .modal .maxclaim-grid span{font-family:var(--mono);font-size:12px;color:#44506E;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;}
+  .modal-actions .btn{color:#fff;}
+  .modal-actions .btn.ghost{background:#EEF1F8;color:#3A4B6E;border-color:#DCE2F0;}
+
+  ::-webkit-scrollbar{width:9px;height:9px;}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px;}
+  .side ::-webkit-scrollbar-thumb{background:#D6DCEA;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="brand">
+      <span class="mark"></span>
+      <h1>Deadlock Guardian</h1>
+      <span class="sub">visual resource-allocation simulator</span>
+    </div>
+    <div class="actions">
+      <button class="btn" id="btnExample"><span class="dot"></span>Load example</button>
+      <button class="btn primary" id="btnSafety">Check safety (Banker's)</button>
+      <button class="btn warn" id="btnDetect">Detect deadlock</button>
+      <button class="btn good" id="btnRecover" disabled>Recover</button>
+      <button class="btn" id="btnClear">Clear canvas</button>
+    </div>
+  </div>
+
+  <!-- TOOLS -->
+  <div class="tools">
+    <h3>Place</h3>
+    <button class="tool active" data-mode="select">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M5 3l14 8-6 1.5L11 19 5 3z" fill="#CBD5EA"/></svg></span>
+      Select / move
+    </button>
+    <button class="tool" data-mode="add-process">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="#2E5CE6" stroke-width="2"/></svg></span>
+      Add process
+    </button>
+    <button class="tool" data-mode="add-resource">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="5" width="14" height="14" stroke="#E8930C" stroke-width="2"/></svg></span>
+      Add resource
+    </button>
+
+    <h3>Connect</h3>
+    <button class="tool" data-mode="assign-edge">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 12h16" stroke="#2E5CE6" stroke-width="2"/><path d="M14 7l6 5-6 5" stroke="#2E5CE6" stroke-width="2" fill="none"/></svg></span>
+      Assignment (R→P)
+    </button>
+    <button class="tool" data-mode="request-edge">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 12h16" stroke="#DC2626" stroke-width="2" stroke-dasharray="3 3"/><path d="M14 7l6 5-6 5" stroke="#DC2626" stroke-width="2" fill="none"/></svg></span>
+      Request (P→R)
+    </button>
+
+    <h3>Edit</h3>
+    <button class="tool" data-mode="properties">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="#CBD5EA" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="#CBD5EA" stroke-width="2"/></svg></span>
+      Properties
+    </button>
+    <button class="tool" data-mode="delete">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M5 6h14M9 6V4h6v2M7 6l1 14h8l1-14" stroke="#F87171" stroke-width="2" fill="none"/></svg></span>
+      Delete
+    </button>
+
+    <div class="hint" id="modeHint">Click empty canvas to place, drag nodes to move.</div>
+  </div>
+
+  <!-- CANVAS -->
+  <div class="canvas-wrap">
+    <svg id="stage"></svg>
+    <div class="mode-banner" id="modeBanner"><span class="pulse"></span><span id="modeBannerText"></span></div>
+  </div>
+
+  <!-- LOG -->
+  <div class="log-panel" id="log"></div>
+
+  <!-- SIDE PANEL -->
+  <div class="side" id="side">
+    <h2>Available</h2>
+    <div id="availBox" class="empty-note">No resources placed yet.</div>
+    <h2>Allocation / Request</h2>
+    <div id="matrixBox" class="empty-note">Add processes and resources to see the matrices.</div>
+    <h2>Selection</h2>
+    <div id="selBox" class="empty-note">Nothing selected.</div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="overlay" id="overlay">
+  <div class="modal" id="modalBody"></div>
+</div>
+
+<script>
+/* =========================================================================
+   DEADLOCK GUARDIAN — visual simulator
+   Vanilla JS + SVG. Ports the same algorithms as the Python backend:
+   Banker's Algorithm (avoidance), matrix-reduction detection, and
+   normalized weighted-cost victim selection (recovery).
+   ========================================================================= */
+
+const svgNS = "http://www.w3.org/2000/svg";
+const stage = document.getElementById('stage');
+const logEl = document.getElementById('log');
+
+let state = {
+  nodes: {},      // id -> {id, kind:'process'|'resource', x, y, name, instances, maxClaim:{}, cpuTime, priority, progress, interactive, restarts}
+  edges: {},      // id -> {id, from, to, kind:'assignment'|'request', weight}
+  nextProcess: 0,
+  nextResource: 0,
+  nextEdge: 0,
+  mode: 'select',
+  pendingEdgeSource: null,
+  selected: null,
+  lastDeadlock: null,  // {deadlocked:[...], cycle:[...]} or null
+};
+
+function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2,9); }
+
+function log(msg, level){
+  level = level || 'info';
+  const row = document.createElement('div');
+  row.className = 'row';
+  const t = document.createElement('span');
+  t.className = 't';
+  const now = new Date();
+  t.textContent = now.toLocaleTimeString('en-GB', {hour12:false});
+  const m = document.createElement('span');
+  m.className = 'msg ' + level;
+  m.textContent = msg;
+  row.appendChild(t); row.appendChild(m);
+  logEl.appendChild(row);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+/* ---------------------------------------------------------------------
+   NODE / EDGE CREATION
+--------------------------------------------------------------------- */
+function addProcess(x, y){
+  const id = uid('P');
+  const name = 'P' + state.nextProcess++;
+  state.nodes[id] = {
+    id, kind:'process', x, y, name,
+    maxClaim:{}, cpuTime: 10, priority: 5, progress: 0.2, interactive:false, restarts:0
+  };
+  log(`Placed process ${name}.`, 'info');
+  render();
+  return id;
+}
+function addResource(x, y){
+  const id = uid('R');
+  const name = 'R' + state.nextResource++;
+  state.nodes[id] = { id, kind:'resource', x, y, name, instances: 1 };
+  log(`Placed resource ${name} (1 instance).`, 'info');
+  render();
+  return id;
+}
+function addEdge(from, to, kind){
+  // if an edge of same kind+direction exists, bump its weight instead of duplicating
+  const existing = Object.values(state.edges).find(e => e.from===from && e.to===to && e.kind===kind);
+  if(existing){ existing.weight += 1; log(`Increased ${kind} weight to ${existing.weight}.`, 'info'); render(); return; }
+  const id = uid('E');
+  state.edges[id] = {id, from, to, kind, weight:1};
+  const fn = state.nodes[from].name, tn = state.nodes[to].name;
+  log(`${kind==='assignment' ? 'Assigned' : 'Requested'}: ${fn} → ${tn}`, 'info');
+  render();
+}
+function removeNode(id){
+  const n = state.nodes[id];
+  if(!n) return;
+  Object.keys(state.edges).forEach(eid=>{
+    const e = state.edges[eid];
+    if(e.from===id || e.to===id) delete state.edges[eid];
+  });
+  delete state.nodes[id];
+  log(`Removed ${n.name}.`, 'warn');
+  render();
+}
+function removeEdge(id){
+  const e = state.edges[id];
+  if(!e) return;
+  delete state.edges[id];
+  render();
+}
+
+/* ---------------------------------------------------------------------
+   DERIVED MATRICES
+--------------------------------------------------------------------- */
+function processes(){ return Object.values(state.nodes).filter(n=>n.kind==='process'); }
+function resources(){ return Object.values(state.nodes).filter(n=>n.kind==='resource'); }
+
+function allocatedUnits(procId, resId){
+  let sum = 0;
+  Object.values(state.edges).forEach(e=>{
+    if(e.kind==='assignment' && e.from===resId && e.to===procId) sum += e.weight;
+  });
+  return sum;
+}
+function requestedUnits(procId, resId){
+  let sum = 0;
+  Object.values(state.edges).forEach(e=>{
+    if(e.kind==='request' && e.from===procId && e.to===resId) sum += e.weight;
+  });
+  return sum;
+}
+function heldTotal(resId){
+  let sum = 0;
+  Object.values(state.edges).forEach(e=>{
+    if(e.kind==='assignment' && e.from===resId) sum += e.weight;
+  });
+  return sum;
+}
+function availableOf(resId){
+  const r = state.nodes[resId];
+  return r.instances - heldTotal(resId);
+}
+function needOf(procId, resId){
+  const p = state.nodes[procId];
+  const mc = (p.maxClaim && p.maxClaim[resId]) || 0;
+  return Math.max(0, mc - allocatedUnits(procId, resId));
+}
+
+/* ---------------------------------------------------------------------
+   BANKER'S ALGORITHM (avoidance / safety check)
+--------------------------------------------------------------------- */
+function checkSafety(){
+  const procs = processes(), res = resources();
+  if(procs.length===0 || res.length===0){
+    log('Add at least one process and one resource before checking safety.', 'warn');
+    return;
+  }
+  let work = {};
+  res.forEach(r => work[r.id] = availableOf(r.id));
+  let finish = {}; procs.forEach(p=>finish[p.id]=false);
+  let sequence = [];
+
+  let progress = true;
+  while(progress && sequence.length < procs.length){
+    progress = false;
+    for(const p of procs){
+      if(finish[p.id]) continue;
+      const canFinish = res.every(r => needOf(p.id, r.id) <= work[r.id]);
+      if(canFinish){
+        res.forEach(r => work[r.id] += allocatedUnits(p.id, r.id));
+        finish[p.id] = true;
+        sequence.push(p.name);
+        progress = true;
+      }
+    }
+  }
+  const safe = sequence.length === procs.length;
+  if(safe){
+    log(`SAFE STATE. Safe sequence: ${sequence.join(' → ')}`, 'good');
+  } else {
+    const stuck = procs.filter(p=>!finish[p.id]).map(p=>p.name);
+    log(`UNSAFE STATE. These processes cannot be guaranteed to finish: ${stuck.join(', ')}. (Banker's Algorithm would have refused the request that led here.)`, 'bad');
+  }
+  render();
+  return {safe, sequence};
+}
+
+/* ---------------------------------------------------------------------
+   DEADLOCK DETECTION (matrix reduction — works for single & multi instance)
+--------------------------------------------------------------------- */
+function detectDeadlock(){
+  const procs = processes(), res = resources();
+  if(procs.length===0){ log('No processes to check.', 'warn'); return; }
+
+  let work = {};
+  res.forEach(r => work[r.id] = availableOf(r.id));
+  let finish = {}; procs.forEach(p=>finish[p.id]=false);
+  let finishOrder = [];
+
+  let progress = true;
+  while(progress){
+    progress = false;
+    for(const p of procs){
+      if(finish[p.id]) continue;
+      const canFinish = res.every(r => requestedUnits(p.id, r.id) <= work[r.id]);
+      if(canFinish){
+        res.forEach(r => work[r.id] += allocatedUnits(p.id, r.id));
+        finish[p.id] = true;
+        finishOrder.push(p.name);
+        progress = true;
+      }
+    }
+  }
+  const deadlocked = procs.filter(p=>!finish[p.id]);
+
+  // try to compute an exact RAG cycle path when every resource is single-instance
+  let cyclePath = null;
+  if(deadlocked.length > 0 && res.every(r=>r.instances===1)){
+    cyclePath = findExactCycle(deadlocked.map(p=>p.id));
+  }
+
+  if(deadlocked.length === 0){
+    log('No deadlock detected. All processes can eventually complete.', 'good');
+    log(`Finish order: ${finishOrder.join(' → ')}`, 'info');
+    state.lastDeadlock = null;
+  } else {
+    log(`DEADLOCK DETECTED among: ${deadlocked.map(p=>p.name).join(', ')}`, 'bad');
+    state.lastDeadlock = { deadlocked: deadlocked.map(p=>p.id), cycle: cyclePath };
+  }
+  document.getElementById('btnRecover').disabled = deadlocked.length===0;
+  render();
+  return { deadlocked, finishOrder, cyclePath };
+}
+
+// build wait-for graph among candidate ids and find one cycle (process id chain)
+function findExactCycle(candidateIds){
+  const set = new Set(candidateIds);
+  const wfg = {}; // procId -> [procId...]
+  candidateIds.forEach(id => wfg[id] = []);
+  candidateIds.forEach(pid=>{
+    Object.values(state.edges).forEach(e=>{
+      if(e.kind==='request' && e.from===pid && set.has(e.from)){
+        const resId = e.to;
+        Object.values(state.edges).forEach(e2=>{
+          if(e2.kind==='assignment' && e2.from===resId && set.has(e2.to) && e2.to!==pid){
+            wfg[pid].push(e2.to);
+          }
+        });
+      }
+    });
+  });
+  // DFS to find a cycle
+  const visited = {}, stack = {}, parent = {};
+  let cycleNodes = null;
+  function dfs(u, path){
+    visited[u]=true; stack[u]=true; path.push(u);
+    for(const v of wfg[u]||[]){
+      if(cycleNodes) return;
+      if(!visited[v]){ parent[v]=u; dfs(v, path); }
+      else if(stack[v]){
+        const idx = path.indexOf(v);
+        cycleNodes = path.slice(idx);
+        return;
+      }
+    }
+    stack[u]=false; path.pop();
+  }
+  for(const id of candidateIds){ if(!visited[id]) dfs(id, []); if(cycleNodes) break; }
+  if(!cycleNodes) return null;
+  // expand into full P -> R -> P path for drawing
+  const full = [];
+  for(let i=0;i<cycleNodes.length;i++){
+    const p = cycleNodes[i], pNext = cycleNodes[(i+1)%cycleNodes.length];
+    full.push(p);
+    // find resource r: p -request-> r -assignment-> pNext
+    const reqEdge = Object.values(state.edges).find(e=>e.kind==='request' && e.from===p);
+    if(reqEdge){
+      const r = reqEdge.to;
+      const hasAssign = Object.values(state.edges).some(e=>e.kind==='assignment' && e.from===r && e.to===pNext);
+      if(hasAssign) full.push(r);
+    }
+  }
+  return full;
+}
+
+/* ---------------------------------------------------------------------
+   COST-BASED VICTIM SELECTION (recovery)
+--------------------------------------------------------------------- */
+const WEIGHTS = { cpuTime:0.30, priority:0.25, resourcesHeld:0.15, progress:0.20, interactive:0.05, restarts:-0.15 };
+
+function normalize(vals){
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  if(hi===lo) return vals.map(()=>0);
+  return vals.map(v => (v-lo)/(hi-lo));
+}
+
+function rankVictims(procIds){
+  const procs = procIds.map(id=>state.nodes[id]);
+  const cpu = normalize(procs.map(p=>p.cpuTime));
+  const pri = normalize(procs.map(p=>p.priority));
+  const held = normalize(procs.map(p=> resources().reduce((s,r)=>s+allocatedUnits(p.id,r.id),0) ));
+  const prog = normalize(procs.map(p=>p.progress));
+  const inter = procs.map(p=>p.interactive?1:0);
+  const restarts = normalize(procs.map(p=>p.restarts));
+
+  const ranked = procs.map((p,i)=>{
+    const breakdown = {
+      cpuTime: cpu[i]*WEIGHTS.cpuTime,
+      priority: pri[i]*WEIGHTS.priority,
+      resourcesHeld: held[i]*WEIGHTS.resourcesHeld,
+      progress: prog[i]*WEIGHTS.progress,
+      interactive: inter[i]*WEIGHTS.interactive,
+      restarts: restarts[i]*WEIGHTS.restarts,
+    };
+    const total = Object.values(breakdown).reduce((a,b)=>a+b,0);
+    return { id:p.id, name:p.name, total, breakdown };
+  });
+  ranked.sort((a,b)=>a.total-b.total);
+  return ranked;
+}
+
+function recoverOnce(){
+  if(!state.lastDeadlock || state.lastDeadlock.deadlocked.length===0){
+    log('Nothing to recover — run "Detect deadlock" first.', 'warn');
+    return;
+  }
+  const ranked = rankVictims(state.lastDeadlock.deadlocked);
+  renderVictimRanking(ranked);
+  const victim = ranked[0];
+  log(`Ranked victims (cheapest first): ${ranked.map(r=>r.name+' ('+r.total.toFixed(3)+')').join(', ')}`, 'info');
+  log(`Aborting ${victim.name} (cost=${victim.total.toFixed(3)}) to break the deadlock.`, 'bad');
+
+  // release all its edges (terminate the process)
+  removeNode(victim.id);
+
+  // re-check
+  const result = detectDeadlock();
+  if(result.deadlocked.length===0){
+    log('Deadlock resolved.', 'good');
+  } else {
+    log('Deadlock persists — click Recover again to abort the next victim.', 'warn');
+  }
+}
+
+/* ---------------------------------------------------------------------
+   RENDERING
+--------------------------------------------------------------------- */
+function clearSVG(){ while(stage.firstChild) stage.removeChild(stage.firstChild); }
+
+function ensureDefs(){
+  const defs = document.createElementNS(svgNS,'defs');
+  defs.innerHTML = `
+    <marker id="arrow-blue" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#2E5CE6"/></marker>
+    <marker id="arrow-red" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#DC2626"/></marker>
+    <marker id="arrow-cycle" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#B91C1C"/></marker>
+    <pattern id="grid" width="22" height="22" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#D9E0EC"/>
+    </pattern>
+  `;
+  stage.appendChild(defs);
+  const bg = document.createElementNS(svgNS,'rect');
+  bg.setAttribute('x','0'); bg.setAttribute('y','0');
+  bg.setAttribute('width','100%'); bg.setAttribute('height','100%');
+  bg.setAttribute('fill','url(#grid)');
+  bg.id = 'bgRect';
+  stage.appendChild(bg);
+}
+
+function cycleEdgeSet(){
+  const s = new Set();
+  const c = state.lastDeadlock && state.lastDeadlock.cycle;
+  if(!c) return s;
+  for(let i=0;i<c.length;i++){
+    s.add(c[i] + '->' + c[(i+1)%c.length]);
+  }
+  return s;
+}
+
+function render(){
+  clearSVG();
+  ensureDefs();
+
+  const cycleSet = cycleEdgeSet();
+  const deadlockedIds = new Set((state.lastDeadlock && state.lastDeadlock.deadlocked) || []);
+
+  // edges first (under nodes)
+  Object.values(state.edges).forEach(e=>{
+    const a = state.nodes[e.from], b = state.nodes[e.to];
+    if(!a || !b) return;
+    const inCycle = cycleSet.has(e.from+'->'+e.to);
+    const isRequest = e.kind==='request';
+    const curve = isRequest ? 22 : 0;
+
+    const dx = b.x-a.x, dy = b.y-a.y;
+    const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
+    const len = Math.hypot(dx,dy) || 1;
+    const nx = -dy/len, ny = dx/len;
+    const cx = mx + nx*curve, cy = my + ny*curve;
+
+    const path = document.createElementNS(svgNS,'path');
+    const d = `M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`;
+    path.setAttribute('d', d);
+    path.setAttribute('fill','none');
+    path.setAttribute('stroke', inCycle ? '#B91C1C' : (isRequest ? '#DC2626' : '#2E5CE6'));
+    path.setAttribute('stroke-width', inCycle ? '3.6' : '2');
+    if(isRequest) path.setAttribute('stroke-dasharray','6 5');
+    path.setAttribute('marker-end', `url(#${inCycle ? 'arrow-cycle' : (isRequest?'arrow-red':'arrow-blue')})`);
+    path.style.cursor='pointer';
+    path.addEventListener('click', (ev)=>{ ev.stopPropagation(); if(state.mode==='delete') removeEdge(e.id); });
+    stage.appendChild(path);
+
+    if(e.weight > 1){
+      const label = document.createElementNS(svgNS,'text');
+      label.setAttribute('x', cx); label.setAttribute('y', cy-4);
+      label.setAttribute('text-anchor','middle');
+      label.setAttribute('font-family','IBM Plex Mono, monospace');
+      label.setAttribute('font-size','11');
+      label.setAttribute('fill', isRequest ? '#B91C1C' : '#1E3A8A');
+      label.setAttribute('font-weight','700');
+      label.textContent = 'x' + e.weight;
+      stage.appendChild(label);
+    }
+  });
+
+  // pending edge preview
+  if(state.pendingEdgeSource){
+    const src = state.nodes[state.pendingEdgeSource];
+    if(src){
+      const ring = document.createElementNS(svgNS,'circle');
+      ring.setAttribute('cx', src.x); ring.setAttribute('cy', src.y);
+      ring.setAttribute('r', 26); ring.setAttribute('fill','none');
+      ring.setAttribute('stroke','#E8930C'); ring.setAttribute('stroke-width','2.5');
+      ring.setAttribute('stroke-dasharray','4 3');
+      stage.appendChild(ring);
+    }
+  }
+
+  // nodes
+  Object.values(state.nodes).forEach(n=>{
+    const g = document.createElementNS(svgNS,'g');
+    g.setAttribute('transform', `translate(${n.x},${n.y})`);
+    g.style.cursor='grab';
+    const isDeadlocked = deadlockedIds.has(n.id);
+    const isSelected = state.selected === n.id;
+
+    if(n.kind==='process'){
+      const c = document.createElementNS(svgNS,'circle');
+      c.setAttribute('r','24');
+      c.setAttribute('fill', isDeadlocked ? '#DC2626' : '#2E5CE6');
+      c.setAttribute('stroke', isSelected ? '#0F1B2E' : (isDeadlocked ? '#7F1D1D' : '#1E3A8A'));
+      c.setAttribute('stroke-width', isSelected ? '3.5' : '2.5');
+      g.appendChild(c);
+    } else {
+      const r = document.createElementNS(svgNS,'rect');
+      r.setAttribute('x','-24'); r.setAttribute('y','-24');
+      r.setAttribute('width','48'); r.setAttribute('height','48');
+      r.setAttribute('rx','7');
+      r.setAttribute('fill', '#E8930C');
+      r.setAttribute('stroke', isSelected ? '#0F1B2E' : '#8A5A06');
+      r.setAttribute('stroke-width', isSelected ? '3.5' : '2.5');
+      g.appendChild(r);
+    }
+
+    const label = document.createElementNS(svgNS,'text');
+    label.setAttribute('text-anchor','middle');
+    label.setAttribute('dy','5');
+    label.setAttribute('font-family','IBM Plex Mono, monospace');
+    label.setAttribute('font-size','13');
+    label.setAttribute('font-weight','700');
+    label.setAttribute('fill', '#FFFFFF');
+    label.textContent = n.name;
+    g.appendChild(label);
+
+    if(n.kind==='resource'){
+      const sub = document.createElementNS(svgNS,'text');
+      sub.setAttribute('text-anchor','middle');
+      sub.setAttribute('dy','38');
+      sub.setAttribute('font-family','IBM Plex Mono, monospace');
+      sub.setAttribute('font-size','10.5');
+      sub.setAttribute('fill', '#5A3E04');
+      sub.textContent = `${availableOf(n.id)}/${n.instances} free`;
+      g.appendChild(sub);
+    }
+
+    g.addEventListener('pointerdown', (ev)=>onNodePointerDown(ev, n.id));
+    g.addEventListener('click', (ev)=>{ ev.stopPropagation(); onNodeClick(n.id); });
+    g.addEventListener('dblclick', (ev)=>{ ev.stopPropagation(); openPropertiesModal(n.id); });
+    stage.appendChild(g);
+  });
+
+  renderMatrices();
+  renderSelection();
+}
+
+function renderMatrices(){
+  const procs = processes(), res = resources();
+  const availBox = document.getElementById('availBox');
+  const matrixBox = document.getElementById('matrixBox');
+
+  if(res.length===0){ availBox.innerHTML = '<div class="empty-note">No resources placed yet.</div>'; }
+  else {
+    availBox.innerHTML = `<table class="matrix"><tr>${res.map(r=>`<th>${r.name}</th>`).join('')}</tr>
+      <tr>${res.map(r=>`<td>${availableOf(r.id)}/${r.instances}</td>`).join('')}</tr></table>`;
+  }
+
+  if(procs.length===0 || res.length===0){
+    matrixBox.innerHTML = '<div class="empty-note">Add processes and resources to see the matrices.</div>';
+    return;
+  }
+  let html = '<table class="matrix"><tr><th>Proc</th>' + res.map(r=>`<th>${r.name} alloc</th>`).join('') + res.map(r=>`<th>${r.name} req</th>`).join('') + '</tr>';
+  procs.forEach(p=>{
+    html += `<tr><td class="rowhead">${p.name}</td>`;
+    res.forEach(r=> html += `<td>${allocatedUnits(p.id,r.id)}</td>`);
+    res.forEach(r=> html += `<td>${requestedUnits(p.id,r.id)}</td>`);
+    html += '</tr>';
+  });
+  html += '</table>';
+  matrixBox.innerHTML = html;
+}
+
+function renderSelection(){
+  const box = document.getElementById('selBox');
+  if(!state.selected || !state.nodes[state.selected]){
+    box.innerHTML = '<div class="empty-note">Nothing selected. Double-click a node to edit its properties.</div>';
+    return;
+  }
+  const n = state.nodes[state.selected];
+  if(n.kind==='process'){
+    box.innerHTML = `<div class="prop-card">
+      <div class="name"><span class="swatch" style="background:#2E5CE6"></span>${n.name} (process)</div>
+      <div class="field-row"><span>CPU time used</span><b>${n.cpuTime}</b></div>
+      <div class="field-row"><span>Priority</span><b>${n.priority}</b></div>
+      <div class="field-row"><span>Progress</span><b>${(n.progress*100).toFixed(0)}%</b></div>
+      <div class="field-row"><span>Interactive</span><b>${n.interactive?'yes':'no'}</b></div>
+      <div class="field-row"><span>Prior restarts</span><b>${n.restarts}</b></div>
+    </div>`;
+  } else {
+    box.innerHTML = `<div class="prop-card">
+      <div class="name"><span class="swatch" style="background:#E8930C"></span>${n.name} (resource)</div>
+      <div class="field-row"><span>Instances</span><b>${n.instances}</b></div>
+      <div class="field-row"><span>Free now</span><b>${availableOf(n.id)}</b></div>
+    </div>`;
+  }
+}
+
+function renderVictimRanking(ranked){
+  const box = document.getElementById('selBox');
+  const maxCost = Math.max(...ranked.map(r=>r.total), 0.0001);
+  let html = '<h2 style="margin-top:0">Victim ranking</h2>';
+  ranked.forEach((r,i)=>{
+    const pct = Math.max(4, (r.total/maxCost)*100);
+    const color = i===0 ? '#DC2626' : '#8ea0c6';
+    html += `<div class="prop-card">
+      <div class="name"><span class="swatch" style="background:${color}"></span>${r.name} ${i===0?'— chosen victim':''}</div>
+      <div class="field-row"><span>Total cost</span><b>${r.total.toFixed(3)}</b></div>
+      <div class="cost-bar-bg"><div class="cost-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+    </div>`;
+  });
+  box.innerHTML = html;
+}
+
+/* ---------------------------------------------------------------------
+   INTERACTION
+--------------------------------------------------------------------- */
+let dragId = null, dragMoved = false, dragStart = {x:0,y:0};
+
+function svgPoint(ev){
+  const rect = stage.getBoundingClientRect();
+  return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+}
+
+function onNodePointerDown(ev, id){
+  ev.stopPropagation();
+  if(state.mode !== 'select') return;
+  dragId = id; dragMoved = false;
+  const p = svgPoint(ev);
+  dragStart = {x:p.x, y:p.y};
+  stage.setPointerCapture && stage.setPointerCapture(ev.pointerId);
+}
+stage.addEventListener('pointermove', (ev)=>{
+  if(!dragId) return;
+  const p = svgPoint(ev);
+  if(Math.hypot(p.x-dragStart.x, p.y-dragStart.y) > 3) dragMoved = true;
+  state.nodes[dragId].x = p.x;
+  state.nodes[dragId].y = p.y;
+  render();
+});
+stage.addEventListener('pointerup', ()=>{ dragId = null; });
+
+function onNodeClick(id){
+  if(state.mode==='delete'){ removeNode(id); return; }
+  if(state.mode==='properties'){ openPropertiesModal(id); return; }
+  if(state.mode==='assign-edge' || state.mode==='request-edge'){
+    const n = state.nodes[id];
+    const wantSourceKind = state.mode==='assign-edge' ? 'resource' : 'process';
+    const wantTargetKind = state.mode==='assign-edge' ? 'process' : 'resource';
+    if(!state.pendingEdgeSource){
+      if(n.kind !== wantSourceKind){
+        log(`${state.mode==='assign-edge' ? 'Assignment edges start at a resource.' : 'Request edges start at a process.'}`, 'warn');
+        return;
+      }
+      state.pendingEdgeSource = id;
+      render();
+      return;
+    } else {
+      if(id === state.pendingEdgeSource){ state.pendingEdgeSource = null; render(); return; }
+      if(n.kind !== wantTargetKind){
+        log(`Invalid target for this edge type.`, 'warn');
+        return;
+      }
+      addEdge(state.pendingEdgeSource, id, state.mode==='assign-edge'?'assignment':'request');
+      state.pendingEdgeSource = null;
+      return;
+    }
+  }
+  if(state.mode==='select'){
+    state.selected = id;
+    renderSelection();
+    Object.values(document.querySelectorAll('g')); // no-op, keep render cheap
+    render();
+  }
+}
+
+stage.addEventListener('click', (ev)=>{
+  const p = svgPoint(ev);
+  if(state.mode==='add-process'){ addProcess(p.x, p.y); }
+  else if(state.mode==='add-resource'){ addResource(p.x, p.y); }
+  else if(state.mode==='select'){ state.selected=null; renderSelection(); }
+});
+
+/* ---------------------------------------------------------------------
+   TOOL MODE SWITCHING
+--------------------------------------------------------------------- */
+const modeHints = {
+  'select': 'Click empty canvas to place, drag nodes to move.',
+  'add-process': 'Click anywhere on the canvas to place a new process.',
+  'add-resource': 'Click anywhere on the canvas to place a new resource.',
+  'assign-edge': 'Click a resource, then the process holding it.',
+  'request-edge': 'Click a process, then the resource it is waiting for.',
+  'properties': 'Click a node to edit its properties.',
+  'delete': 'Click a node or edge to delete it.',
+};
+document.querySelectorAll('.tool').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tool').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    state.mode = btn.dataset.mode;
+    state.pendingEdgeSource = null;
+    document.getElementById('modeHint').textContent = modeHints[state.mode];
+    const banner = document.getElementById('modeBanner');
+    const txt = document.getElementById('modeBannerText');
+    if(state.mode==='select'){ banner.classList.remove('show'); }
+    else { banner.classList.add('show'); txt.textContent = modeHints[state.mode]; }
+    stage.style.cursor = (state.mode==='add-process'||state.mode==='add-resource') ? 'crosshair' : 'default';
+    render();
+  });
+});
+
+/* ---------------------------------------------------------------------
+   PROPERTIES MODAL
+--------------------------------------------------------------------- */
+const overlay = document.getElementById('overlay');
+const modalBody = document.getElementById('modalBody');
+
+function closeModal(){ overlay.classList.remove('show'); modalBody.innerHTML=''; }
+overlay.addEventListener('click', (ev)=>{ if(ev.target===overlay) closeModal(); });
+
+function openPropertiesModal(id){
+  const n = state.nodes[id];
+  if(!n) return;
+  if(n.kind==='resource'){
+    modalBody.innerHTML = `
+      <h3>${n.name} — resource</h3>
+      <div class="modal-sub">Configure instance count</div>
+      <label>Total instances</label>
+      <input type="number" id="f_instances" min="1" value="${n.instances}">
+      <div class="modal-actions">
+        <button class="btn ghost" id="mCancel">Cancel</button>
+        <button class="btn primary" id="mSave">Save</button>
+      </div>`;
+  } else {
+    const res = resources();
+    const rows = res.map(r=>`<div class="maxclaim-grid"><span>${r.name} max claim</span><input type="number" min="0" data-res="${r.id}" class="mc-input" value="${(n.maxClaim&&n.maxClaim[r.id])||0}"></div>`).join('') || '<div class="empty-note" style="margin-top:6px">Add resources first to set max claims.</div>';
+    modalBody.innerHTML = `
+      <h3>${n.name} — process</h3>
+      <div class="modal-sub">Used by Banker's Algorithm & victim selection</div>
+      <div class="grid2">
+        <div><label>CPU time used</label><input type="number" id="f_cpu" min="0" value="${n.cpuTime}"></div>
+        <div><label>Priority (1–10)</label><input type="number" id="f_pri" min="1" max="10" value="${n.priority}"></div>
+      </div>
+      <div class="grid2">
+        <div><label>Progress (0–100%)</label><input type="number" id="f_prog" min="0" max="100" value="${Math.round(n.progress*100)}"></div>
+        <div><label>Prior restarts</label><input type="number" id="f_restarts" min="0" value="${n.restarts}"></div>
+      </div>
+      <label style="display:flex;align-items:center;margin-top:12px;"><input type="checkbox" id="f_inter" ${n.interactive?'checked':''}> Interactive / user-facing</label>
+      <label style="margin-top:14px;">Max claim per resource (Banker's Algorithm)</label>
+      ${rows}
+      <div class="modal-actions">
+        <button class="btn ghost" id="mCancel">Cancel</button>
+        <button class="btn primary" id="mSave">Save</button>
+      </div>`;
+  }
+  overlay.classList.add('show');
+  document.getElementById('mCancel').onclick = closeModal;
+  document.getElementById('mSave').onclick = ()=>{
+    if(n.kind==='resource'){
+      n.instances = Math.max(1, parseInt(document.getElementById('f_instances').value)||1);
+    } else {
+      n.cpuTime = parseFloat(document.getElementById('f_cpu').value)||0;
+      n.priority = parseInt(document.getElementById('f_pri').value)||1;
+      n.progress = Math.min(100, Math.max(0, parseFloat(document.getElementById('f_prog').value)||0))/100;
+      n.restarts = parseInt(document.getElementById('f_restarts').value)||0;
+      n.interactive = document.getElementById('f_inter').checked;
+      n.maxClaim = n.maxClaim || {};
+      document.querySelectorAll('.mc-input').forEach(inp=>{
+        n.maxClaim[inp.dataset.res] = parseInt(inp.value)||0;
+      });
+    }
+    log(`Updated properties for ${n.name}.`, 'info');
+    closeModal();
+    render();
+  };
+}
+
+/* ---------------------------------------------------------------------
+   TOP BAR ACTIONS
+--------------------------------------------------------------------- */
+document.getElementById('btnSafety').addEventListener('click', checkSafety);
+document.getElementById('btnDetect').addEventListener('click', detectDeadlock);
+document.getElementById('btnRecover').addEventListener('click', recoverOnce);
+document.getElementById('btnClear').addEventListener('click', ()=>{
+  state.nodes = {}; state.edges = {}; state.lastDeadlock = null;
+  state.nextProcess = 0; state.nextResource = 0;
+  document.getElementById('btnRecover').disabled = true;
+  log('Canvas cleared.', 'warn');
+  render();
+});
+document.getElementById('btnExample').addEventListener('click', loadExample);
+
+function loadExample(){
+  state.nodes = {}; state.edges = {}; state.lastDeadlock = null;
+  state.nextProcess = 0; state.nextResource = 0;
+  document.getElementById('btnRecover').disabled = true;
+
+  const cx = stage.clientWidth/2, cy = stage.clientHeight/2;
+  const p0 = addProcess(cx-180, cy-110);
+  const p1 = addProcess(cx+40, cy-160);
+  const p2 = addProcess(cx+200, cy+40);
+  const r0 = addResource(cx-40, cy-40);
+  const r1 = addResource(cx+220, cy-160);
+  const r2 = addResource(cx+40, cy+140);
+
+  state.nodes[p0].cpuTime=120; state.nodes[p0].priority=8; state.nodes[p0].progress=0.85; state.nodes[p0].interactive=true;
+  state.nodes[p1].cpuTime=5;   state.nodes[p1].priority=2; state.nodes[p1].progress=0.10; state.nodes[p1].interactive=false;
+  state.nodes[p2].cpuTime=40;  state.nodes[p2].priority=4; state.nodes[p2].progress=0.45; state.nodes[p2].interactive=false;
+
+  // P0 holds R0, wants R1;  P1 holds R1, wants R2;  P2 holds R2, wants R0  -> 3-cycle
+  addEdge(r0, p0, 'assignment');
+  addEdge(p0, r1, 'request');
+  addEdge(r1, p1, 'assignment');
+  addEdge(p1, r2, 'request');
+  addEdge(r2, p2, 'assignment');
+  addEdge(p2, r0, 'request');
+
+  log('Loaded example: a 3-process circular-wait scenario. Click "Detect deadlock" to find the cycle, then "Recover".', 'info');
+  render();
+}
+
+/* ---------------------------------------------------------------------
+   RESIZE + INIT
+--------------------------------------------------------------------- */
+function fitStage(){
+  const wrap = document.querySelector('.canvas-wrap');
+  stage.setAttribute('viewBox', `0 0 ${wrap.clientWidth} ${wrap.clientHeight}`);
+}
+window.addEventListener('resize', ()=>{ fitStage(); render(); });
+fitStage();
+render();
+log('Welcome to Deadlock Guardian. Use "Load example" to see a pre-built deadlock, or place processes/resources yourself.', 'info');
+</script>
+</body>
+</html>
