@@ -275,7 +275,7 @@
       Delete
     </button>
 
-    <div class="hint" id="modeHint">Click empty canvas to place, drag nodes to move.</div>
+    <div class="hint" id="modeHint">Click a node or edge to select it. Press Delete or right-click to remove it.</div>
   </div>
 
   <!-- CANVAS -->
@@ -324,6 +324,7 @@ let state = {
   mode: 'select',
   pendingEdgeSource: null,
   selected: null,
+  selectedEdge: null,
   lastDeadlock: null,  // {deadlocked:[...], cycle:[...]} or null
 };
 
@@ -611,7 +612,6 @@ function recoverOnce(){
     return;
   }
   const ranked = rankVictims(state.lastDeadlock.deadlocked);
-  renderVictimRanking(ranked);
   const victim = ranked[0];
   log(`Ranked victims (cheapest first): ${ranked.map(r=>r.name+' ('+r.total.toFixed(3)+')').join(', ')}`, 'info');
   log(`Aborting ${victim.name} (cost=${victim.total.toFixed(3)}) to break the deadlock.`, 'bad');
@@ -626,6 +626,7 @@ function recoverOnce(){
   } else {
     log('Deadlock persists — click Recover again to abort the next victim.', 'warn');
   }
+  renderVictimRanking(ranked);
 }
 
 /* ---------------------------------------------------------------------
@@ -691,9 +692,27 @@ function render(){
     path.setAttribute('stroke-width', inCycle ? '3.6' : '2');
     if(isRequest) path.setAttribute('stroke-dasharray','6 5');
     path.setAttribute('marker-end', `url(#${inCycle ? 'arrow-cycle' : (isRequest?'arrow-red':'arrow-blue')})`);
-    path.style.cursor='pointer';
-    path.addEventListener('click', (ev)=>{ ev.stopPropagation(); if(state.mode==='delete') removeEdge(e.id); });
+    if(state.selectedEdge === e.id){
+      const halo = document.createElementNS(svgNS,'path');
+      halo.setAttribute('d', d); halo.setAttribute('fill','none');
+      halo.setAttribute('stroke','#E8930C'); halo.setAttribute('stroke-width','9');
+      halo.setAttribute('stroke-opacity','0.45'); halo.setAttribute('stroke-linecap','round');
+      halo.style.pointerEvents = 'none';
+      stage.appendChild(halo);
+    }
+    path.style.pointerEvents = 'none';
     stage.appendChild(path);
+    // invisible, wider copy of the edge so it is easy to click or right-click
+    const hit = document.createElementNS(svgNS,'path');
+    hit.setAttribute('d', d); hit.setAttribute('fill','none');
+    hit.setAttribute('stroke','transparent'); hit.setAttribute('stroke-width','16');
+    hit.style.cursor = 'pointer';
+    hit.addEventListener('click', (ev)=>{ ev.stopPropagation(); onEdgeClick(e.id); });
+    hit.addEventListener('contextmenu', (ev)=>{
+      ev.preventDefault(); ev.stopPropagation();
+      state.selected = null; state.selectedEdge = e.id; deleteSelection();
+    });
+    stage.appendChild(hit);
 
     if(e.weight > 1){
       const label = document.createElementNS(svgNS,'text');
@@ -770,6 +789,10 @@ function render(){
 
     g.addEventListener('pointerdown', (ev)=>onNodePointerDown(ev, n.id));
     g.addEventListener('click', (ev)=>{ ev.stopPropagation(); onNodeClick(n.id); });
+    g.addEventListener('contextmenu', (ev)=>{
+      ev.preventDefault(); ev.stopPropagation();
+      state.selected = n.id; state.selectedEdge = null; deleteSelection();
+    });
     g.addEventListener('dblclick', (ev)=>{ ev.stopPropagation(); openPropertiesModal(n.id); });
     stage.appendChild(g);
   });
@@ -804,7 +827,7 @@ function renderMatrices(){
   matrixBox.innerHTML = html;
 }
 
-function renderSelection(){
+function renderSelectionBase(){
   const box = document.getElementById('selBox');
   if(!state.selected || !state.nodes[state.selected]){
     box.innerHTML = '<div class="empty-note">Nothing selected. Double-click a node to edit its properties.</div>';
@@ -826,6 +849,32 @@ function renderSelection(){
       <div class="field-row"><span>Instances</span><b>${n.instances}</b></div>
       <div class="field-row"><span>Free now</span><b>${availableOf(n.id)}</b></div>
     </div>`;
+  }
+}
+
+function renderSelection(){
+  const box = document.getElementById('selBox');
+  if(state.selectedEdge && state.edges[state.selectedEdge]){
+    const e = state.edges[state.selectedEdge];
+    const a = state.nodes[e.from], b = state.nodes[e.to];
+    const isReq = e.kind === 'request';
+    box.innerHTML = `<div class="prop-card">
+      <div class="name"><span class="swatch" style="background:${isReq ? '#DC2626' : '#2E5CE6'}"></span>${isReq ? 'Request' : 'Assignment'} edge</div>
+      <div class="field-row"><span>From \u2192 To</span><b>${a ? a.name : '?'} \u2192 ${b ? b.name : '?'}</b></div>
+      <div class="field-row"><span>Units</span><b>${e.weight}</b></div>
+    </div>
+    <button class="btn warn" id="btnDeleteSel" style="width:100%;justify-content:center">Delete this edge</button>
+    <div class="empty-note" style="margin-top:8px">Or press Delete, or right-click the edge.</div>`;
+    document.getElementById('btnDeleteSel').onclick = deleteSelection;
+    return;
+  }
+  renderSelectionBase();
+  if(state.selected && state.nodes[state.selected]){
+    const n = state.nodes[state.selected];
+    box.insertAdjacentHTML('beforeend',
+      `<button class="btn warn" id="btnDeleteSel" style="width:100%;justify-content:center">Delete ${n.name}</button>
+       <div class="empty-note" style="margin-top:8px">Or press Delete, or right-click the node.</div>`);
+    document.getElementById('btnDeleteSel').onclick = deleteSelection;
   }
 }
 
@@ -857,16 +906,17 @@ function svgPoint(ev){
 
 function onNodePointerDown(ev, id){
   ev.stopPropagation();
+  if(ev.button !== 0) return;
   if(state.mode !== 'select') return;
   dragId = id; dragMoved = false;
   const p = svgPoint(ev);
   dragStart = {x:p.x, y:p.y};
-  stage.setPointerCapture && stage.setPointerCapture(ev.pointerId);
 }
 stage.addEventListener('pointermove', (ev)=>{
-  if(!dragId) return;
+  if(!dragId || !state.nodes[dragId]) return;
   const p = svgPoint(ev);
   if(Math.hypot(p.x-dragStart.x, p.y-dragStart.y) > 3) dragMoved = true;
+  if(!dragMoved) return;
   state.nodes[dragId].x = p.x;
   state.nodes[dragId].y = p.y;
   render();
@@ -874,7 +924,7 @@ stage.addEventListener('pointermove', (ev)=>{
 stage.addEventListener('pointerup', ()=>{ dragId = null; });
 
 function onNodeClick(id){
-  if(state.mode==='delete'){ removeNode(id); return; }
+  if(state.mode==='delete'){ removeNode(id); resetDeadlockView(); return; }
   if(state.mode==='properties'){ openPropertiesModal(id); return; }
   if(state.mode==='assign-edge' || state.mode==='request-edge'){
     const n = state.nodes[id];
@@ -901,6 +951,7 @@ function onNodeClick(id){
   }
   if(state.mode==='select'){
     state.selected = id;
+    state.selectedEdge = null;
     renderSelection();
     Object.values(document.querySelectorAll('g')); // no-op, keep render cheap
     render();
@@ -911,14 +962,47 @@ stage.addEventListener('click', (ev)=>{
   const p = svgPoint(ev);
   if(state.mode==='add-process'){ addProcess(p.x, p.y); }
   else if(state.mode==='add-resource'){ addResource(p.x, p.y); }
-  else if(state.mode==='select'){ state.selected=null; renderSelection(); }
+  else if(state.mode==='select'){ state.selected=null; state.selectedEdge=null; render(); }
 });
 
 /* ---------------------------------------------------------------------
    TOOL MODE SWITCHING
 --------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------
+   DELETING a placed node or edge
+   (Delete key, right-click, the panel button, or the Delete tool)
+--------------------------------------------------------------------- */
+function resetDeadlockView(){
+  // a manual edit makes any earlier detection result stale
+  state.lastDeadlock = null;
+  document.getElementById('btnRecover').disabled = true;
+  render();
+}
+function deleteSelection(){
+  if(state.selected && state.nodes[state.selected]){
+    const id = state.selected;
+    state.selected = null;
+    removeNode(id);
+    resetDeadlockView();
+  } else if(state.selectedEdge && state.edges[state.selectedEdge]){
+    const e = state.edges[state.selectedEdge];
+    const a = state.nodes[e.from], b = state.nodes[e.to];
+    state.selectedEdge = null;
+    removeEdge(e.id);
+    log(`Removed ${e.kind} edge ${a ? a.name : '?'} \u2192 ${b ? b.name : '?'}.`, 'warn');
+    resetDeadlockView();
+  }
+}
+function onEdgeClick(id){
+  if(state.mode==='delete'){ state.selectedEdge = id; state.selected = null; deleteSelection(); return; }
+  if(state.mode==='select'){
+    state.selectedEdge = id; state.selected = null;
+    render();
+  }
+}
+
 const modeHints = {
-  'select': 'Click empty canvas to place, drag nodes to move.',
+  'select': 'Click a node or edge to select it. Press Delete or right-click to remove it.',
   'add-process': 'Click anywhere on the canvas to place a new process.',
   'add-resource': 'Click anywhere on the canvas to place a new resource.',
   'assign-edge': 'Click a resource, then the process holding it.',
@@ -1011,6 +1095,15 @@ function openPropertiesModal(id){
 /* ---------------------------------------------------------------------
    TOP BAR ACTIONS
 --------------------------------------------------------------------- */
+document.addEventListener('keydown', (ev)=>{
+  if(ev.key !== 'Delete' && ev.key !== 'Backspace') return;
+  if(overlay.classList.contains('show')) return;               // a dialog is open
+  const t = ev.target;
+  if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return; // typing in a field
+  if(!state.selected && !state.selectedEdge) return;
+  ev.preventDefault();
+  deleteSelection();
+});
 document.getElementById('btnSafety').addEventListener('click', checkSafety);
 document.getElementById('btnDetect').addEventListener('click', detectDeadlock);
 document.getElementById('btnRecover').addEventListener('click', recoverOnce);
